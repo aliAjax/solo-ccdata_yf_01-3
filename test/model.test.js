@@ -313,3 +313,94 @@ test('填充工具：只填充连通区域，同色为无操作', () => {
   assert.strictEqual(M.fillWouldChange(0, 0, '#00ff00'), false);       // 同色无操作
   assert.strictEqual(M.floodFill(0, 0, '#00ff00'), false);
 });
+
+test('锁定/隐藏组：每个修改入口都被拒绝且数据零变化', () => {
+  for (const mode of ['locked', 'hidden']) {
+    const M = createModel();
+    const s = seed(M);
+    // 准备数据：f0 主体两个像素，f1 主体一个像素，剪贴板有内容
+    M.setPixel(0, 0, '#ff0000');
+    M.setPixel(1, 0, '#ff0000');
+    M.addFrame();
+    M.setPixel(2, 2, '#00ff00');
+    M.selectFrame(0);
+    M.copyCel();
+    if (mode === 'locked') M.toggleLocked(s.group.id); else M.toggleVisible(s.group.id);
+    const before0 = M.composite(0).slice();
+    const before1 = M.composite(1).slice();
+    const celF0 = M.getCel(0, s.main).slice();
+    // 1. 绘制（画笔/橡皮共用 setPixel）
+    assert.strictEqual(M.setPixel(5, 5, '#ffffff'), false, mode + ': setPixel');
+    // 2. 填充
+    assert.strictEqual(M.fillWouldChange(5, 5, '#ffffff'), false, mode + ': fillWouldChange');
+    assert.strictEqual(M.floodFill(5, 5, '#ffffff'), false, mode + ': floodFill');
+    // 3. 粘贴（活动层在受限组内）
+    assert.strictEqual(M.pasteCel(), false, mode + ': pasteCel');
+    // 4. 批量清空
+    assert.strictEqual(M.clearCels([0, 1], s.main), false, mode + ': clearCels');
+    // 5/6. 水平 / 垂直翻转
+    assert.strictEqual(M.flipCels([0, 1], s.main, 'h'), false, mode + ': flipCels h');
+    assert.strictEqual(M.flipCels([0, 1], s.main, 'v'), false, mode + ': flipCels v');
+    // 数据零变化
+    assert.deepStrictEqual(M.getCel(0, s.main), celF0, mode + ': cel 未被修改');
+    assert.deepStrictEqual(M.composite(0), before0, mode + ': f0 合成不变');
+    assert.deepStrictEqual(M.composite(1), before1, mode + ': f1 合成不变');
+    // 组外图层不受影响（成功路径）
+    M.state.activeLayer = s.bg;
+    assert.strictEqual(M.setPixel(9, 9, '#0000ff'), true, mode + ': 组外可绘制');
+    assert.strictEqual(M.clearCels([0], s.bg), true, mode + ': 组外可清空');
+    // 解除限制后全部恢复
+    if (mode === 'locked') M.toggleLocked(s.group.id); else M.toggleVisible(s.group.id);
+    M.state.activeLayer = s.main;
+    assert.strictEqual(M.setPixel(5, 5, '#ffffff'), true, mode + ': 解锁后可绘制');
+    assert.strictEqual(M.pasteCel(), true, mode + ': 解锁后可粘贴');
+    assert.strictEqual(M.flipCels([0], s.main, 'h'), true, mode + ': 解锁后可翻转');
+    assert.strictEqual(M.clearCels([0], s.main), true, mode + ': 解锁后可清空');
+  }
+});
+
+test('锁定/隐藏单个图层：批量入口同样被拒绝', () => {
+  const M = createModel();
+  const s = seed(M);
+  M.setPixel(0, 0, '#ff0000');
+  M.toggleLocked(s.main);
+  assert.strictEqual(M.clearCels([0], s.main), false);
+  assert.strictEqual(M.flipCels([0], s.main, 'h'), false);
+  assert.strictEqual(M.flipCels([0], s.main, 'v'), false);
+  M.toggleLocked(s.main);
+  M.toggleVisible(s.main);
+  assert.strictEqual(M.clearCels([0], s.main), false);
+  assert.strictEqual(M.flipCels([0], s.main, 'h'), false);
+  M.toggleVisible(s.main);
+  // 恢复后翻转生效：(0,0) → (15,0)
+  assert.strictEqual(M.flipCels([0], s.main, 'h'), true);
+  assert.strictEqual(M.getCel(0, s.main)[idx(15, 0)], '#ff0000');
+});
+
+test('被拒绝的操作不进入撤销历史', () => {
+  const M = createModel();
+  const s = seed(M);
+  // 有效操作：画一个像素（应入历史）
+  M.pushHistory();
+  M.setPixel(0, 0, '#ff0000');
+  // 模拟界面 commit 流程：锁定组（有效）→ 批量清空（被拒绝）
+  M.pushHistory();
+  M.toggleLocked(s.group.id);
+  M.pushHistory();
+  const r = M.clearCels([0], s.main);
+  assert.strictEqual(r, false);
+  if (r === false) M.historyPop();             // 界面 commit 的失败分支
+  // 第一次撤销：应撤销「锁定组」，而不是被拒绝的清空
+  M.undo();
+  assert.strictEqual(M.findNode(s.group.id).node.locked, false);
+  assert.strictEqual(M.layerEditable(s.main), true);
+  // 第二次撤销：应撤销「画像素」
+  M.undo();
+  assert.strictEqual(M.getCel(0, s.main), null);
+  assert.strictEqual(M.canUndo(), false);      // 历史中没有残留的无效记录
+  // 重做应能完整回放两个有效操作
+  M.redo();
+  assert.strictEqual(M.getCel(0, s.main)[idx(0, 0)], '#ff0000');
+  M.redo();
+  assert.strictEqual(M.findNode(s.group.id).node.locked, true);
+});

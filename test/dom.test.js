@@ -120,3 +120,40 @@ test('界面：锁定/隐藏图层后绘制被拒绝并提示', () => {
   assert.match(d.querySelector('#layerHint').textContent, /不可编辑/);
   w.close();
 });
+
+test('界面：锁定/隐藏组后批量与粘贴被拒绝，提示与结果一致，撤销不记录无效操作', () => {
+  const dom = boot();
+  dom.window.eval(src);
+  const w = dom.window, d = w.document, M = w.PixelLoom;
+  const canvas = d.querySelector('#canvas');
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 320, right: 320, bottom: 320 });
+  // 先画一个像素（有效操作，应入历史）
+  canvas.dispatchEvent(new w.MouseEvent('pointerdown', { clientX: 30, clientY: 30, bubbles: true }));
+  w.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true }));
+  const layer = M.state.activeLayer;
+  assert.strictEqual(M.getCel(0, layer)[1 * 16 + 1], '#ff7aa8');
+  // 锁定整组（第一行是组「角色」）
+  d.querySelector('#layers .lrow .lock').click();
+  assert.strictEqual(M.activeEditable(), false);
+  // 批量清空 / 水平翻转 / 垂直翻转：全部拒绝，提示与结果一致
+  for (const id of ['#clearSel', '#flipH', '#flipV']) {
+    d.querySelector(id).click();
+    assert.match(d.querySelector('#status').textContent, /不可编辑/, id);
+  }
+  assert.strictEqual(M.getCel(0, layer)[1 * 16 + 1], '#ff7aa8'); // 数据未变
+  // 粘贴：拒绝
+  M.copyCel();
+  d.querySelector('#pasteCel').click();
+  assert.match(d.querySelector('#status').textContent, /不可编辑/);
+  // 撤销一次应回到「锁定组」之前：证明被拒绝的批量操作没有进入历史
+  d.querySelector('#undo').click();
+  assert.strictEqual(M.activeEditable(), true);
+  assert.strictEqual(M.getCel(0, layer)[1 * 16 + 1], '#ff7aa8');
+  // 隐藏整组：同样拒绝且提示一致
+  d.querySelector('#layers .lrow .vis').click();
+  assert.strictEqual(M.activeEditable(), false);
+  d.querySelector('#clearSel').click();
+  assert.match(d.querySelector('#status').textContent, /不可编辑/);
+  assert.strictEqual(M.getCel(0, layer)[1 * 16 + 1], '#ff7aa8');
+  w.close();
+});

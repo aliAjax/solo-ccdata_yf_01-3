@@ -200,10 +200,12 @@ function createModel(){
     return true;
   }
   function clearCels(indices,lid){
+    if(!layerEditable(lid))return false; // 隐藏/锁定（含组继承）拒绝
     indices.forEach(i=>{if(state.frames[i])state.frames[i].cels[lid]=blank();});
     return true;
   }
   function flipCels(indices,lid,dir){
+    if(!layerEditable(lid))return false; // 隐藏/锁定（含组继承）拒绝
     indices.forEach(i=>{
       const cel=getCel(i,lid);if(!cel)return;
       const out=blank();
@@ -347,11 +349,12 @@ if(typeof document!=='undefined'){(function(){
       }catch(e){status('自动保存失败：'+e.message);}
     },400);
   }
-  // 所有状态变更的统一入口：先快照，再执行，失败则丢弃快照
-  function commit(fn,msg){
+  // 所有状态变更的统一入口：先快照，再执行；被拒绝则丢弃快照并提示失败原因，不污染历史
+  function commit(fn,okMsg,failMsg){
     M.pushHistory();
     const r=fn();
-    if(r===false)M.historyPop();else{persist();if(msg)status(msg);}
+    if(r===false){M.historyPop();if(failMsg)status(failMsg);}
+    else{persist();if(okMsg)status(okMsg);}
     draw();
     return r;
   }
@@ -530,9 +533,9 @@ if(typeof document!=='undefined'){(function(){
     const sel=M.state.selected;
     commit(()=>M.setLoop(Math.min.apply(null,sel),Math.max.apply(null,sel),true),'循环区间已更新');
   };
-  $('#clearSel').onclick=()=>commit(()=>M.clearCels(M.state.selected,M.state.activeLayer),'已清空选中帧的当前层');
-  $('#flipH').onclick=()=>commit(()=>M.flipCels(M.state.selected,M.state.activeLayer,'h'),'已水平翻转');
-  $('#flipV').onclick=()=>commit(()=>M.flipCels(M.state.selected,M.state.activeLayer,'v'),'已垂直翻转');
+  $('#clearSel').onclick=()=>commit(()=>M.clearCels(M.state.selected,M.state.activeLayer),'已清空选中帧的当前层','当前图层不可编辑（已隐藏或已锁定）');
+  $('#flipH').onclick=()=>commit(()=>M.flipCels(M.state.selected,M.state.activeLayer,'h'),'已水平翻转','当前图层不可编辑（已隐藏或已锁定）');
+  $('#flipV').onclick=()=>commit(()=>M.flipCels(M.state.selected,M.state.activeLayer,'v'),'已垂直翻转','当前图层不可编辑（已隐藏或已锁定）');
 
   /* ---------- 图层 ---------- */
   $('#addLayer').onclick=()=>{
@@ -542,14 +545,11 @@ if(typeof document!=='undefined'){(function(){
   $('#addGroup').onclick=()=>commit(()=>M.addGroup(null));
   $('#layerUp').onclick=()=>commit(()=>M.moveNodeVertical(M.state.activeLayer,-1));
   $('#layerDown').onclick=()=>commit(()=>M.moveNodeVertical(M.state.activeLayer,1));
-  $('#delLayer').onclick=()=>{
-    const r=commit(()=>M.removeNode(M.state.activeLayer),'已删除图层');
-    if(r===false)status('至少保留一个图层');
-  };
+  $('#delLayer').onclick=()=>commit(()=>M.removeNode(M.state.activeLayer),'已删除图层','至少保留一个图层');
   $('#copyCel').onclick=()=>{M.copyCel();status('已复制当前层画面（可跨帧/跨层粘贴）');};
   $('#pasteCel').onclick=()=>{
     if(!M.activeEditable()){status('当前图层不可编辑（已隐藏或已锁定）');return;}
-    commit(()=>M.pasteCel(),'已粘贴到当前层');
+    commit(()=>M.pasteCel(),'已粘贴到当前层','剪贴板为空');
   };
 
   /* ---------- 播放 ---------- */
@@ -589,7 +589,7 @@ if(typeof document!=='undefined'){(function(){
     else if(mod&&k==='v'){
       e.preventDefault();
       if(!M.activeEditable()){status('当前图层不可编辑（已隐藏或已锁定）');return;}
-      commit(()=>M.pasteCel(),'已粘贴到当前层');
+      commit(()=>M.pasteCel(),'已粘贴到当前层','剪贴板为空');
     }
   });
   $('#save').onclick=()=>{

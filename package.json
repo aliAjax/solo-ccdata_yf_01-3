@@ -4,7 +4,7 @@
   "private": true,
   "description": "Pixel Loom 像素动画编辑器：可嵌套图层组 + 时间轴",
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test test/model.test.js test/dom.test.js"
   },
   "devDependencies": {
     "jsdom": "^24.1.0"
