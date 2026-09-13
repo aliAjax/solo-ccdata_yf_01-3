@@ -1,0 +1,12 @@
+{
+  "name": "pixel-loom",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Pixel Loom 像素动画编辑器：可嵌套图层组 + 时间轴",
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.0"
+  }
+}
